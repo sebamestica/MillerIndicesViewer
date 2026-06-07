@@ -54,17 +54,22 @@ export function applyVisualDeformation(ex, ey, ez, gxy = 0) {
         return raw;
     };
 
-    // Aplicar escalado seguro
-    const sx = 1 + smartScale(ex, visualFactor);
-    const sy = 1 + smartScale(ey, visualFactor);
-    const sz = 1 + smartScale(ez, visualFactor);
-    const sxy = smartScale(gxy, shearFactor);
+    // Mapeo correcto de deformaciones según la orientación de los ejes:
+    // UI X -> Three.js Z
+    // UI Y -> Three.js X
+    // UI Z -> Three.js Y (UP)
+    const sx = 1 + smartScale(ey, visualFactor); // Three.js X es UI Y
+    const sy = 1 + smartScale(ez, visualFactor); // Three.js Y es UI Z (UP)
+    const sz = 1 + smartScale(ex, visualFactor); // Three.js Z es UI X
+    
+    // Cizalladura en el plano UI X-Y corresponds to Three.js Z-X
+    const sxz = smartScale(gxy, shearFactor);
 
     crystalGroup.matrix.identity();
     
-    // Matriz 4x4 (Shear en XY: el eje X se inclina hacia Y)
+    // Matriz 4x4 con cizallamiento en el plano Z-X (UI X-Y)
     crystalGroup.matrix.set(
-        sx,  sxy, 0,   0,
+        sx,  0,   sxz, 0,
         0,   sy,  0,   0,
         0,   0,   sz,  0,
         0,   0,   0,   1
@@ -125,7 +130,7 @@ export function updateMechanicalArrows(strains, stress = null) {
                 arrowDir = dir.clone().normalize();
                 arrowOrigin = origin.clone();
             } else {
-                // Compresión: Apunta hacia adentro (comienza desplazado hacia afuera y entra a la cara)
+                // Compresión: Apunta hacia adentro (comienza afuera y entra)
                 arrowDir = dir.clone().negate().normalize();
                 arrowOrigin = origin.clone().add(dir.clone().normalize().multiplyScalar(length));
             }
@@ -136,25 +141,30 @@ export function updateMechanicalArrows(strains, stress = null) {
     };
 
     // --- DEFORMACIONES NORMALES (Perpendiculares a las caras del cubo) ---
-    // Eje X
-    createArrow(new THREE.Vector3(1, 0, 0), new THREE.Vector3(s, s/2, s/2), ex);
-    createArrow(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, s/2, s/2), ex);
+    // Mapeo correcto de Ejes:
+    // UI X -> Three.js Z
+    // UI Y -> Three.js X
+    // UI Z -> Three.js Y (UP)
 
-    // Eje Y
-    createArrow(new THREE.Vector3(0, 1, 0), new THREE.Vector3(s/2, s, s/2), ey);
-    createArrow(new THREE.Vector3(0, -1, 0), new THREE.Vector3(s/2, 0, s/2), ey);
+    // UI Y (Three.js X-axis)
+    createArrow(new THREE.Vector3(1, 0, 0), new THREE.Vector3(s, s/2, s/2), ey);
+    createArrow(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, s/2, s/2), ey);
 
-    // Eje Z
-    createArrow(new THREE.Vector3(0, 0, 1), new THREE.Vector3(s/2, s/2, s), ez);
-    createArrow(new THREE.Vector3(0, 0, -1), new THREE.Vector3(s/2, s/2, 0), ez);
+    // UI Z (Three.js Y-axis, UP)
+    createArrow(new THREE.Vector3(0, 1, 0), new THREE.Vector3(s/2, s, s/2), ez);
+    createArrow(new THREE.Vector3(0, -1, 0), new THREE.Vector3(s/2, 0, s/2), ez);
 
-    // --- DEFORMACIONES DE CIZALLE (Paralelas a las caras) ---
+    // UI X (Three.js Z-axis)
+    createArrow(new THREE.Vector3(0, 0, 1), new THREE.Vector3(s/2, s/2, s), ex);
+    createArrow(new THREE.Vector3(0, 0, -1), new THREE.Vector3(s/2, s/2, 0), ex);
+
+    // --- DEFORMACIONES DE CIZALLE (Paralelas a las caras, plano UI X-Y -> Three.js Z-X) ---
     if (Math.abs(gxy) > 1e-12) {
-        createArrow(new THREE.Vector3(0, 1, 0), new THREE.Vector3(s, 0, s/2), gxy, true);
-        createArrow(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, s, s/2), gxy, true);
+        createArrow(new THREE.Vector3(1, 0, 0), new THREE.Vector3(s/2, s/2, s), gxy, true);
+        createArrow(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(s/2, s/2, 0), gxy, true);
         
-        createArrow(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, s, s/2), gxy, true);
-        createArrow(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(s, 0, s/2), gxy, true);
+        createArrow(new THREE.Vector3(0, 0, 1), new THREE.Vector3(s, s/2, s/2), gxy, true);
+        createArrow(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, s/2, s/2), gxy, true);
     }
 
     requestRender();
