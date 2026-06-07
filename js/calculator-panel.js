@@ -2,6 +2,7 @@ import { sanitizeIntegerInput } from './ui.js';
 import * as MaterialsData from './materials-data.js';
 import * as CrystalCalculator from './crystal-calculator.js';
 import { getActiveCalculatorContext, setActiveCalculatorContext, getState } from './state.js';
+import { parseFloatInput } from './math.js';
 
 let isPanelOpen = false;
 
@@ -478,9 +479,9 @@ export function updateCrystalCalculatorResults(results) {
 
 export function getCalculatorInputs() {
     return {
-        a: parseFloat(document.getElementById('calc-a')?.value || 0),
-        c: parseFloat(document.getElementById('calc-c')?.value || 0),
-        atomicMass: parseFloat(document.getElementById('calc-mass')?.value || 0),
+        a: parseFloatInput(document.getElementById('calc-a')?.value || 0),
+        c: parseFloatInput(document.getElementById('calc-c')?.value || 0),
+        atomicMass: parseFloatInput(document.getElementById('calc-mass')?.value || 0),
         structure: document.getElementById('calc-structure-select')?.value || 'FCC',
         h: parseInt(document.getElementById('calc-h')?.value || 0),
         k: parseInt(document.getElementById('calc-k')?.value || 0),
@@ -491,7 +492,7 @@ export function getCalculatorInputs() {
         getIsotopicCustomMix: () => {
             const inputs = document.querySelectorAll('.iso-mix-input');
             const mix = [];
-            inputs.forEach(inp => mix.push(parseFloat(inp.value) || 0));
+            inputs.forEach(inp => mix.push(parseFloatInput(inp.value) || 0));
             return mix;
         }
     };

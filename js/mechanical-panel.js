@@ -3,6 +3,7 @@ import * as MechMath from './mechanical-math.js';
 import * as MechData from './mechanical-data.js';
 import { drawStressStrainCurve } from './mechanical-chart.js';
 import { generateMechanicalAdvice } from './advisor-engine.js';
+import { parseFloatInput } from './math.js';
 
 /**
  * MECHANICAL PANEL (v3.2)
@@ -162,9 +163,9 @@ function renderMechanicalContent() {
 }
 
 function updateMaterialDerivedInfo() {
-    const E = parseFloat(document.getElementById('mech-young')?.value || 200);
-    const v = parseFloat(document.getElementById('mech-poisson')?.value || 0.3);
-    const Sy = parseFloat(document.getElementById('mech-yield')?.value || 250);
+    const E = parseFloatInput(document.getElementById('mech-young')?.value || 200);
+    const v = parseFloatInput(document.getElementById('mech-poisson')?.value || 0.3);
+    const Sy = parseFloatInput(document.getElementById('mech-yield')?.value || 250);
     const G = MechMath.calculateShearModulus(E, v);
     
     const info = document.getElementById('mech-material-info');
@@ -260,7 +261,7 @@ function bindMechanicalEvents() {
 
 function runMechanicalPipeline() {
     const getSafeVal = (id, limit = 1000000) => {
-        const val = parseFloat(document.getElementById(id)?.value || 0);
+        const val = parseFloatInput(document.getElementById(id)?.value || 0);
         if (isNaN(val)) return 0;
         return Math.max(-limit, Math.min(val, limit));
     };
@@ -274,17 +275,24 @@ function runMechanicalPipeline() {
         zx: getSafeVal('mech-stress-zx')
     };
     
-    const young = parseFloat(document.getElementById('mech-young').value || 200);
-    const poisson = parseFloat(document.getElementById('mech-poisson').value || 0.3);
-    const yieldLimit = parseFloat(document.getElementById('mech-yield').value || 250);
+    const young = parseFloatInput(document.getElementById('mech-young').value || 200);
+    const poisson = parseFloatInput(document.getElementById('mech-poisson').value || 0.3);
+    const yieldLimit = parseFloatInput(document.getElementById('mech-yield').value || 250);
     
     // 1. Calcular Strains (Ley de Hooke Generalizada)
     const strains = MechMath.calculateStrains(stress, young, poisson);
     const volumeChange = MechMath.calculateVolumeChange(strains);
     
-    // 2. Criterio de Falla (Von Mises)
+    // 2. Criterios de Falla y Métricas Avanzadas
     const vonMises = MechMath.calculateVonMises(stress);
     const factorSafety = MechMath.calculateSafetyFactor(vonMises, yieldLimit);
+    
+    const principalStresses = MechMath.calculatePrincipalStresses(stress);
+    const tresca = MechMath.calculateTresca(stress);
+    const trescaFs = MechMath.calculateSafetyFactor(tresca, yieldLimit);
+    
+    const strainEnergy = MechMath.calculateStrainEnergy(stress, strains);
+    const resilience = 0.5 * Math.pow(yieldLimit, 2) / (young * 1000);
     
     // 3. Descomposición del Tensor
     const { P } = MechMath.decomposeStressTensor(stress);
@@ -294,13 +302,13 @@ function runMechanicalPipeline() {
     const rss = MechMath.calculateRSS(stress, state.indices);
 
     // 5. Actualizar UI y Gráfico
-    updateMechanicalResultsUI(strains, volumeChange, rss, vonMises, factorSafety, yieldLimit);
+    updateMechanicalResultsUI(strains, volumeChange, rss, vonMises, factorSafety, yieldLimit, principalStresses, tresca, trescaFs, strainEnergy, resilience);
     drawStressStrainCurve('mech-sigma-epsilon-chart', vonMises, strains.ex, yieldLimit, young);
 
     // 6. Aplicar a la escena 3D
     import('./scene.js').then(Scene => {
         Scene.applyVisualDeformation(strains.ex, strains.ey, strains.ez, strains.gxy);
-        Scene.updateMechanicalArrows(stress);
+        Scene.updateMechanicalArrows(strains, stress);
         
         // 7. Actualizar Asesor
         updateAdvisor(stress, strains, vonMises, yieldLimit, factorSafety, rss);
@@ -335,40 +343,84 @@ function updateAdvisor(stress, strains, vonMises, yieldLimit, fs, rss) {
     }
 }
 
-function updateMechanicalResultsUI(strains, volume, rss, vonMises, fs, yieldLimit) {
+function updateMechanicalResultsUI(strains, volume, rss, vonMises, fs, yieldLimit, principalStresses = [0,0,0], tresca = 0, trescaFs = Infinity, strainEnergy = 0, resilience = 0) {
     const container = document.getElementById('mech-results-container');
     if (!container) return;
 
     const fsText = fs === Infinity ? '∞' : fs.toFixed(2);
     const fsColor = fs < 1 ? '#e53e3e' : fs < 2 ? '#dd6b20' : '#38a169';
 
+    const trescaFsText = trescaFs === Infinity ? '∞' : trescaFs.toFixed(2);
+    const trescaFsColor = trescaFs < 1 ? '#e53e3e' : trescaFs < 2 ? '#dd6b20' : '#38a169';
+
     const formatVal = (v, d = 4) => {
         if (Math.abs(v) < 0.001 && v !== 0) return v.toExponential(4);
         return v.toFixed(d);
     };
 
+    const maxStrain = Math.max(Math.abs(strains.ex), Math.abs(strains.ey), Math.abs(strains.ez), Math.abs(strains.gxy));
+    const isAmplified = maxStrain > 0 && maxStrain < 0.005;
+
+    // Relación de energía elástica respecto a resiliencia
+    const energyRatio = resilience > 0 ? (strainEnergy / resilience) * 100 : 0;
+
     container.innerHTML = `
         <div style="display: flex; flex-direction: column; gap: 8px;">
-            <!-- VON MISES Y SEGURIDAD -->
-            <div style="padding: 10px; background: ${vonMises > yieldLimit ? '#fff5f5' : '#f0fff4'}; border-radius: 6px; border: 1px solid ${vonMises > yieldLimit ? '#feb2b2' : '#c6f6d5'};">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-weight: 700; color: #2d3748; font-size: 0.85rem;">Esfuerzo Von Mises</span>
-                    <span style="font-weight: 800; color: ${vonMises > yieldLimit ? '#c53030' : '#2f855a'}; font-size: 1rem;">${formatVal(vonMises, 6)} MPa</span>
+            <!-- CRITERIOS DE FALLA Y SEGURIDAD -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <!-- VON MISES -->
+                <div style="padding: 10px; background: ${vonMises > yieldLimit ? '#fff5f5' : '#f0fff4'}; border-radius: 6px; border: 1px solid ${vonMises > yieldLimit ? '#feb2b2' : '#c6f6d5'};">
+                    <div style="font-size: 0.7rem; font-weight: 700; color: #4a5568; text-transform: uppercase;">Von Mises</div>
+                    <div style="font-weight: 800; color: ${vonMises > yieldLimit ? '#c53030' : '#2f855a'}; font-size: 0.9rem; margin-top: 2px;">${formatVal(vonMises, 4)} MPa</div>
+                    <div style="font-size: 0.65rem; color: #718096; margin-top: 4px;">FS (n): <span style="font-weight:700; color:${fsColor};">${fsText}</span></div>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-                    <span style="font-size: 0.75rem; color: #4a5568;">Factor de Seguridad (n)</span>
-                    <span style="font-weight: 800; color: ${fsColor}; font-size: 1rem;">${fsText}</span>
+                <!-- TRESCA -->
+                <div style="padding: 10px; background: ${tresca > yieldLimit ? '#fff5f5' : '#f0fff4'}; border-radius: 6px; border: 1px solid ${tresca > yieldLimit ? '#feb2b2' : '#c6f6d5'};">
+                    <div style="font-size: 0.7rem; font-weight: 700; color: #4a5568; text-transform: uppercase;">Tresca</div>
+                    <div style="font-weight: 800; color: ${tresca > yieldLimit ? '#c53030' : '#2f855a'}; font-size: 0.9rem; margin-top: 2px;">${formatVal(tresca, 4)} MPa</div>
+                    <div style="font-size: 0.65rem; color: #718096; margin-top: 4px;">FS (n): <span style="font-weight:700; color:${trescaFsColor};">${trescaFsText}</span></div>
                 </div>
-                ${vonMises > yieldLimit ? '<div style="color: #c53030; font-size: 0.7rem; font-weight: 700; margin-top: 5px; text-align: center;">ADVERTENCIA: PLASTICIDAD / FALLA DETECTADA</div>' : ''}
+            </div>
+            
+            ${(vonMises > yieldLimit || tresca > yieldLimit) ? '<div style="color: #c53030; font-size: 0.7rem; font-weight: 700; text-align: center; background: #fff5f5; border: 1px solid #feb2b2; padding: 4px; border-radius: 4px;">ADVERTENCIA: PLASTICIDAD / FALLA DETECTADA</div>' : ''}
+
+            <!-- ESFUERZOS PRINCIPALES -->
+            <div style="background: #f7fafc; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 0.7rem; font-weight: 700; color: #4a5568; text-transform: uppercase; margin-bottom: 4px; text-align: center; border-bottom: 1px dashed #cbd5e0; padding-bottom: 3px;">Esfuerzos Principales</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; text-align: center;">
+                    <div>
+                        <div style="font-size: 0.6rem; color: #718096;">σ₁ (Máx)</div>
+                        <div style="font-weight: 700; font-size: 0.75rem; color: #2d3748;">${formatVal(principalStresses[0], 2)}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.6rem; color: #718096;">σ₂ (Med)</div>
+                        <div style="font-weight: 700; font-size: 0.75rem; color: #2d3748;">${formatVal(principalStresses[1], 2)}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.6rem; color: #718096;">σ₃ (Mín)</div>
+                        <div style="font-weight: 700; font-size: 0.75rem; color: #2d3748;">${formatVal(principalStresses[2], 2)}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ENERGÍA ELÁSTICA -->
+            <div style="background: #f0f4f8; padding: 8px; border-radius: 6px; border: 1px solid #d9e2ec; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-size: 0.7rem; font-weight: 700; color: #486581; text-transform: uppercase;">Dens. Energía Elástica (U)</div>
+                    <div style="font-size: 0.65rem; color: #627d98;">Capacidad Usada: <span style="font-weight: 700; color: #102a43;">${energyRatio.toFixed(3)}%</span></div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-weight: 800; color: #102a43; font-size: 0.85rem;">${formatVal(strainEnergy, 6)} MJ/m³</div>
+                </div>
             </div>
 
             <!-- DEFORMACIONES -->
-            <div style="display: flex; flex-direction: column; gap: 4px; padding: 5px;">
-                <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+            <div style="display: flex; flex-direction: column; gap: 4px; padding: 5px; background: #fff; border: 1px solid #edf2f7; border-radius: 6px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
                     <span style="color: #4a5568;">ε Axial (Promedio)</span>
                     <span style="font-weight: 700;">${formatVal((strains.ex + strains.ey + strains.ez)/3 * 100, 6)} %</span>
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; border-top: 1px solid #f7fafc; padding-top: 2px;">
                     <span style="color: #4a5568;">γ Cizalle (xy)</span>
                     <span style="font-weight: 700;">${formatVal(strains.gxy * 100, 6)} %</span>
                 </div>
@@ -385,6 +437,12 @@ function updateMechanicalResultsUI(strains, volume, rss, vonMises, fs, yieldLimi
                     <div style="font-weight: 700; font-size: 0.8rem; color: #c53030;">${formatVal(rss, 4)} MPa</div>
                 </div>
             </div>
+
+            ${isAmplified ? `
+            <div style="font-size: 0.65rem; color: #718096; text-align: center; font-style: italic; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 4px;">
+                ⚠️ Visualización amplificada dinámicamente para microdeformaciones.
+            </div>
+            ` : ''}
         </div>
     `;
 }
@@ -392,13 +450,13 @@ function updateMechanicalResultsUI(strains, volume, rss, vonMises, fs, yieldLimi
 function resetMechanicalDeformation() {
     import('./scene.js').then(Scene => {
         Scene.applyVisualDeformation(0, 0, 0, 0);
-        Scene.updateMechanicalArrows({ xx: 0, yy: 0, zz: 0, xy: 0, yz: 0, zx: 0 });
+        Scene.updateMechanicalArrows(null);
     });
     const results = document.getElementById('mech-results-container');
     if (results) results.innerHTML = '<div style="font-size: 0.75rem; color: #718096; text-align: center; padding: 10px;">Simulación restablecida.</div>';
     
-    const yieldLimit = parseFloat(document.getElementById('mech-yield')?.value || 250);
-    const young = parseFloat(document.getElementById('mech-young')?.value || 200);
+    const yieldLimit = parseFloatInput(document.getElementById('mech-yield')?.value || 250);
+    const young = parseFloatInput(document.getElementById('mech-young')?.value || 200);
     drawStressStrainCurve('mech-sigma-epsilon-chart', 0, 0, yieldLimit, young);
     
     // Ocultar asesor al resetear

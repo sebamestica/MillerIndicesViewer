@@ -29,8 +29,18 @@ export function requestRender() {
  * Utiliza escalado inteligente para evitar rupturas del renderizado ante valores extremos.
  */
 export function applyVisualDeformation(ex, ey, ez, gxy = 0) {
-    const visualFactor = 25; 
-    const shearFactor = 15; 
+    const maxStrain = Math.max(Math.abs(ex), Math.abs(ey), Math.abs(ez), Math.abs(gxy));
+    
+    let visualFactor = 25; 
+    let shearFactor = 15; 
+    
+    // Amplificación dinámica para deformaciones ínfimas (microdeformaciones)
+    if (maxStrain > 0 && maxStrain < 0.005) {
+        const targetMaxVisualStrain = 0.15; // Queremos que la deformación visual máxima sea del 15%
+        const boost = targetMaxVisualStrain / maxStrain;
+        visualFactor = boost;
+        shearFactor = boost * 0.6; // Mantener relación proporcional
+    }
     
     // Función de compresión suave (Smart Scaling)
     // Evita que los átomos se alejen infinitamente de la vista
@@ -65,10 +75,11 @@ export function applyVisualDeformation(ex, ey, ez, gxy = 0) {
 }
 
 /**
- * ACTUALIZA LAS FLECHAS DE CARA (TENSORES DE ESFUERZO)
- * @param {Object} stress {xx, yy, zz, xy, yz, zx} en MPa
+ * ACTUALIZA LAS FLECHAS DE CARA (TENSORES DE DEFORMACIÓN)
+ * @param {Object} strains {ex, ey, ez, gxy, gyz, gzx}
+ * @param {Object} stress {xx, yy, zz, xy, yz, zx} opcional
  */
-export function updateMechanicalArrows(stress) {
+export function updateMechanicalArrows(strains, stress = null) {
     const s = CONFIG.scale;
     
     // Limpiar flechas anteriores
@@ -77,52 +88,73 @@ export function updateMechanicalArrows(stress) {
         overlayObjects.remove(overlayObjects.children[0]);
     }
 
-    if (!stress) return;
+    if (!strains) return;
     
-    // Mapeo de nombres (compatibilidad con objeto antiguo)
-    const sigX = stress.xx !== undefined ? stress.xx : (stress.x || 0);
-    const sigY = stress.yy !== undefined ? stress.yy : (stress.y || 0);
-    const sigZ = stress.zz !== undefined ? stress.zz : (stress.z || 0);
-    const tauXY = stress.xy || 0;
+    const ex = strains.ex || 0;
+    const ey = strains.ey || 0;
+    const ez = strains.ez || 0;
+    const gxy = strains.gxy || 0;
 
-    const createArrow = (dir, origin, magnitude, isShear = false) => {
-        if (Math.abs(magnitude) < 1) return;
+    const maxStrain = Math.max(Math.abs(ex), Math.abs(ey), Math.abs(ez), Math.abs(gxy));
+
+    const createArrow = (dir, origin, strainVal, isShear = false) => {
+        if (Math.abs(strainVal) < 1e-12) return;
         
-        let color = magnitude > 0 ? 0xff4444 : 0x4444ff; // Normal: Rojo (+), Azul (-)
+        let color = strainVal > 0 ? 0xff4444 : 0x4444ff; // Tracción: Rojo (+), Compresión: Azul (-)
         if (isShear) color = 0xddaa00; // Shear: Dorado/Naranja
         
-        const length = Math.min(Math.abs(magnitude) / 100 * s, s * 1.5); 
+        // Determinar longitud visual razonable de la flecha
+        // Usamos una longitud mínima para que siempre sea visible, y escalamos proporcionalmente
+        let length;
+        if (maxStrain > 0) {
+            const relativeStrain = Math.abs(strainVal) / maxStrain;
+            length = s * (0.4 + 0.8 * relativeStrain);
+        } else {
+            length = s * 0.5;
+        }
         
-        // Direccionamiento
-        const arrowDir = magnitude > 0 ? dir.clone() : dir.clone().negate();
-        const arrowOrigin = magnitude > 0 ? origin.clone() : origin.clone().add(dir.clone().multiplyScalar(length));
+        let arrowDir;
+        let arrowOrigin;
 
-        const arrow = new THREE.ArrowHelper(arrowDir, arrowOrigin, length, color, 0.35 * s, 0.18 * s);
+        if (isShear) {
+            arrowDir = strainVal > 0 ? dir.clone() : dir.clone().negate();
+            arrowOrigin = origin.clone();
+        } else {
+            if (strainVal > 0) {
+                // Tracción/Estiramiento: Apunta hacia afuera
+                arrowDir = dir.clone().normalize();
+                arrowOrigin = origin.clone();
+            } else {
+                // Compresión: Apunta hacia adentro (comienza desplazado hacia afuera y entra a la cara)
+                arrowDir = dir.clone().negate().normalize();
+                arrowOrigin = origin.clone().add(dir.clone().normalize().multiplyScalar(length));
+            }
+        }
+
+        const arrow = new THREE.ArrowHelper(arrowDir, arrowOrigin, length, color, 0.25 * s, 0.12 * s);
         overlayObjects.add(arrow);
     };
 
-    // --- ESFUERZOS NORMALES (Perpendiculares a las caras) ---
+    // --- DEFORMACIONES NORMALES (Perpendiculares a las caras del cubo) ---
     // Eje X
-    createArrow(new THREE.Vector3(1, 0, 0), new THREE.Vector3(s, s/2, s/2), sigX);
-    createArrow(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, s/2, s/2), sigX);
+    createArrow(new THREE.Vector3(1, 0, 0), new THREE.Vector3(s, s/2, s/2), ex);
+    createArrow(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, s/2, s/2), ex);
 
     // Eje Y
-    createArrow(new THREE.Vector3(0, 1, 0), new THREE.Vector3(s/2, s, s/2), sigY);
-    createArrow(new THREE.Vector3(0, -1, 0), new THREE.Vector3(s/2, 0, s/2), sigY);
+    createArrow(new THREE.Vector3(0, 1, 0), new THREE.Vector3(s/2, s, s/2), ey);
+    createArrow(new THREE.Vector3(0, -1, 0), new THREE.Vector3(s/2, 0, s/2), ey);
 
     // Eje Z
-    createArrow(new THREE.Vector3(0, 0, 1), new THREE.Vector3(s/2, s/2, s), sigZ);
-    createArrow(new THREE.Vector3(0, 0, -1), new THREE.Vector3(s/2, s/2, 0), sigZ);
+    createArrow(new THREE.Vector3(0, 0, 1), new THREE.Vector3(s/2, s/2, s), ez);
+    createArrow(new THREE.Vector3(0, 0, -1), new THREE.Vector3(s/2, s/2, 0), ez);
 
-    // --- ESFUERZOS DE CIZALLE (Paralelos a las caras) ---
-    if (Math.abs(tauXY) > 1) {
-        // τxy: Fuerza en cara X actuando en dirección Y
-        createArrow(new THREE.Vector3(0, 1, 0), new THREE.Vector3(s, 0, s/2), tauXY, true);
-        createArrow(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, s, s/2), tauXY, true);
+    // --- DEFORMACIONES DE CIZALLE (Paralelas a las caras) ---
+    if (Math.abs(gxy) > 1e-12) {
+        createArrow(new THREE.Vector3(0, 1, 0), new THREE.Vector3(s, 0, s/2), gxy, true);
+        createArrow(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, s, s/2), gxy, true);
         
-        // τyx (complementario): Fuerza en cara Y actuando en dirección X
-        createArrow(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, s, s/2), tauXY, true);
-        createArrow(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(s, 0, s/2), tauXY, true);
+        createArrow(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, s, s/2), gxy, true);
+        createArrow(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(s, 0, s/2), gxy, true);
     }
 
     requestRender();

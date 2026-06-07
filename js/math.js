@@ -75,7 +75,8 @@ export function parseIntegerInput(value) {
 
 export function parseFloatInput(value) {
     if (value === undefined || value === null || value === "") return 0;
-    const parsed = parseFloat(value);
+    const cleaned = String(value).replace(/,/g, '.').trim();
+    const parsed = parseFloat(cleaned);
     return isNaN(parsed) ? 0 : parsed;
 }
 
