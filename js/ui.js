@@ -101,6 +101,36 @@ export function sanitizeIntegerInput(el) {
     return sanitized;
 }
 
+export function sanitizeFloatInput(el) {
+    let val = el.value;
+    // Remueve todo lo que no sea dígito, signo menos, signo más, punto o coma
+    let sanitized = val.replace(/[^-+0-9.,]/g, '');
+    
+    // Permitir un signo opcional (+ o -) al inicio
+    let firstChar = '';
+    if (sanitized.startsWith('-') || sanitized.startsWith('+')) {
+        firstChar = sanitized.charAt(0);
+        sanitized = sanitized.slice(1);
+    }
+    
+    // Quitar cualquier otro signo que haya quedado
+    sanitized = sanitized.replace(/[-+]/g, '');
+    
+    // Permitir solo el primer punto o coma, y eliminar los demás
+    let parts = sanitized.split(/[.,]/);
+    if (parts.length > 2) {
+        sanitized = parts[0] + '.' + parts.slice(1).join('');
+    } else if (parts.length === 2) {
+        const match = val.match(/[.,]/);
+        const sep = match ? match[0] : '.';
+        sanitized = parts[0] + sep + parts[1];
+    }
+    
+    sanitized = firstChar + sanitized;
+    if (val !== sanitized) el.value = sanitized;
+    return sanitized;
+}
+
 /**
  * CAMBIO Visual del sistema - No dispara lógica pesada (la lógica está en app.js)
  */

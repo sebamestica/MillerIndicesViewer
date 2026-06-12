@@ -1,4 +1,5 @@
 import { getState, updateState } from './state.js';
+import { sanitizeFloatInput } from './ui.js';
 import * as MechMath from './mechanical-math.js';
 import * as MechData from './mechanical-data.js';
 import { drawStressStrainCurve } from './mechanical-chart.js';
@@ -76,18 +77,18 @@ function renderMechanicalContent() {
             <div class="input-grid grid-3">
                 <div class="mech-field">
                     <label class="mech-label">Young (GPa)</label>
-                    <input type="number" id="mech-young" value="200" step="1" class="mech-input">
+                    <input type="text" inputmode="text" id="mech-young" value="200" class="mech-input">
                 </div>
                 <div class="mech-field">
                     <label class="mech-label">Poisson (ν)</label>
-                    <input type="number" id="mech-poisson" value="0.30" step="0.01" class="mech-input">
+                    <input type="text" inputmode="text" id="mech-poisson" value="0.30" class="mech-input">
                 </div>
                 <div class="mech-field">
                     <label class="mech-label">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px; color: #e53e3e;"><path d="M12 2v20M2 12h20"/><path d="m17 7-5-5-5 5"/><path d="m17 17-5 5-5-5"/></svg>
                         Límite σy (MPa)
                     </label>
-                    <input type="number" id="mech-yield" value="250" step="0.0001" class="mech-input">
+                    <input type="text" inputmode="text" id="mech-yield" value="250" class="mech-input">
                 </div>
             </div>
             <div id="mech-material-info" style="margin-top: 10px; font-size: 0.75rem; color: #718096; background: #f7fafc; padding: 8px; border-radius: 4px; border-left: 3px solid #cbd5e0;">
@@ -110,29 +111,29 @@ function renderMechanicalContent() {
             <div class="input-grid grid-3">
                 <div class="mech-field">
                     <label class="mech-label">σxx (MPa)</label>
-                    <input type="number" id="mech-stress-xx" value="100" step="any" class="mech-input">
+                    <input type="text" inputmode="text" id="mech-stress-xx" value="100" class="mech-input">
                 </div>
                 <div class="mech-field">
                     <label class="mech-label">σyy (MPa)</label>
-                    <input type="number" id="mech-stress-yy" value="0" step="any" class="mech-input" disabled>
+                    <input type="text" inputmode="text" id="mech-stress-yy" value="0" class="mech-input" disabled>
                 </div>
                 <div class="mech-field">
                     <label class="mech-label">σzz (MPa)</label>
-                    <input type="number" id="mech-stress-zz" value="0" step="any" class="mech-input" disabled>
+                    <input type="text" inputmode="text" id="mech-stress-zz" value="0" class="mech-input" disabled>
                 </div>
             </div>
             <div class="input-grid grid-3" id="mech-shear-inputs" style="display: none; margin-top: 10px;">
                 <div class="mech-field">
                     <label class="mech-label">τxy (MPa)</label>
-                    <input type="number" id="mech-stress-xy" value="0" step="any" class="mech-input">
+                    <input type="text" inputmode="text" id="mech-stress-xy" value="0" class="mech-input">
                 </div>
                 <div class="mech-field">
                     <label class="mech-label">τyz (MPa)</label>
-                    <input type="number" id="mech-stress-yz" value="0" step="any" class="mech-input">
+                    <input type="text" inputmode="text" id="mech-stress-yz" value="0" class="mech-input">
                 </div>
                 <div class="mech-field">
                     <label class="mech-label">τzx (MPa)</label>
-                    <input type="number" id="mech-stress-zx" value="0" step="any" class="mech-input">
+                    <input type="text" inputmode="text" id="mech-stress-zx" value="0" class="mech-input">
                 </div>
             </div>
         </div>
@@ -242,6 +243,11 @@ function bindMechanicalEvents() {
     // Soporte de Teclado Completo: Enter para calcular en cualquier input
     const mechInputs = document.querySelectorAll('#mech-panel input');
     mechInputs.forEach(input => {
+        if (input.classList.contains('mech-input')) {
+            input.addEventListener('input', () => {
+                sanitizeFloatInput(input);
+            });
+        }
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 runMechanicalPipeline();

@@ -1,4 +1,4 @@
-import { sanitizeIntegerInput } from './ui.js';
+import { sanitizeIntegerInput, sanitizeFloatInput } from './ui.js';
 import * as MaterialsData from './materials-data.js';
 import * as CrystalCalculator from './crystal-calculator.js';
 import { getActiveCalculatorContext, setActiveCalculatorContext, getState } from './state.js';
@@ -205,12 +205,13 @@ function updateIsotopeDropdown(mat) {
     customList.innerHTML = iso.map((i, idx) => `
         <div style="display:flex; justify-content:space-between; margin-bottom:4px; align-items:center;">
             <span>${i.isotope} (${i.mass} u)</span>
-            <div><input type="number" id="calc-iso-mix-${idx}" class="calc-input iso-mix-input" style="width:60px; padding:2px;" value="${i.abundance}" min="0" max="100"> %</div>
+            <div><input type="text" inputmode="text" id="calc-iso-mix-${idx}" class="calc-input iso-mix-input" style="width:60px; padding:2px;" value="${i.abundance}"> %</div>
         </div>
     `).join('');
 
     const mixInputs = document.querySelectorAll('.iso-mix-input');
     mixInputs.forEach(inp => inp.addEventListener('input', () => {
+        sanitizeFloatInput(inp);
         if (typeof window.triggerCalculatorUpdate === 'function') window.triggerCalculatorUpdate();
     }));
 }
@@ -275,7 +276,12 @@ function bindCalculatorEvents() {
         if (!el) return;
         
         el.addEventListener('input', () => {
-             if (typeof window.triggerCalculatorUpdate === 'function') window.triggerCalculatorUpdate();
+            if (id === 'calc-a' || id === 'calc-c' || id === 'calc-mass') {
+                sanitizeFloatInput(el);
+            } else if (id === 'calc-h' || id === 'calc-k' || id === 'calc-l') {
+                sanitizeIntegerInput(el);
+            }
+            if (typeof window.triggerCalculatorUpdate === 'function') window.triggerCalculatorUpdate();
         });
 
         el.addEventListener('keydown', (e) => {
@@ -371,15 +377,15 @@ function renderCalculatorContent() {
             <div class="calc-grid">
                 <div class="calc-field">
                     <label>a (Å)</label>
-                    <input type="number" id="calc-a" value="4.05" step="0.001" class="calc-input">
+                    <input type="text" inputmode="text" id="calc-a" value="4.05" class="calc-input">
                 </div>
                 <div class="calc-field" id="calc-c-container" style="display: none;">
                     <label>c (Å)</label>
-                    <input type="number" id="calc-c" value="9.25" step="0.001" class="calc-input">
+                    <input type="text" inputmode="text" id="calc-c" value="9.25" class="calc-input">
                 </div>
                 <div class="calc-field">
                     <label>Masa (u)</label>
-                    <input type="number" id="calc-mass" value="26.98" step="0.01" class="calc-input">
+                    <input type="text" inputmode="text" id="calc-mass" value="26.98" class="calc-input">
                 </div>
             </div>
             <div id="calc-hex-results" style="display: none; margin-top: 15px; padding: 12px; background: #f0f7ff; border-radius: 8px; border: 1px solid #cce3ff;"></div>
@@ -397,9 +403,9 @@ function renderCalculatorContent() {
         <div class="calc-section">
             <h3 class="calc-section-title">3. Orientación (h k l)</h3>
             <div class="calc-grid-3">
-                <div class="calc-field"><label>h</label><input type="number" id="calc-h" value="1" class="calc-input"></div>
-                <div class="calc-field"><label>k</label><input type="number" id="calc-k" value="1" class="calc-input"></div>
-                <div class="calc-field"><label>l</label><input type="number" id="calc-l" value="1" class="calc-input"></div>
+                <div class="calc-field"><label>h</label><input type="text" inputmode="text" id="calc-h" value="1" class="calc-input"></div>
+                <div class="calc-field"><label>k</label><input type="text" inputmode="text" id="calc-k" value="1" class="calc-input"></div>
+                <div class="calc-field"><label>l</label><input type="text" inputmode="text" id="calc-l" value="1" class="calc-input"></div>
             </div>
         </div>
 
